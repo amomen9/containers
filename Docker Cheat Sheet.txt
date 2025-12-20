@@ -1,0 +1,725 @@
+
+
+
+## docker important directories
+```
+- docker static modules like runc:
+/var/run/docker/
+
+- /var/lib/docker/
+all major dynamic directories such as containers, images, network, plugins, swarm, volumes
+
+
+
+```
+
+
+
+### Install Docker engine without Docker Desktop (default context) with hello-world and sql server images
+```
+#remove old conflicting packages of docker:
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove -y $pkg; done
+sudo apt-get update
+sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+# apt install tsocks
+# vi /etc/tsocks.conf 
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+add-apt-repository "deb [arch=`dpkg --print-architecture`] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt-get update -y
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+# or get package URIs using the following command:
+# sudo apt reinstall --download-only --print-uris -y docker-ce docker-ce-cli containerd.io
+sudo docker context ls
+
+# now we should fetch and pull the package hello-world to test docker. If not sanctioned, docker run hello-world automatically pulls first the image and
+# then run it. Otherwise the image shall be pulled somewhere else and then installed offline. 
+# Also, ensure that you have the necessary permissions to execute these commands and that your user is part of the docker group to run Docker commands without sudo
+usermod -aG docker ali
+newgrp ali		# to make new group membership effective	
+# this did not work because of sanctions: tsocks docker pull hello-world
+
+## On a machine without sanctions for offline installation:
+docker pull hello-world	# docker pull Registry/Repository/image_name:tag, if tag not specified, the "latest" version will be pulled.
+##output:
+#root@amomen:~# docker pull hello-world
+#Using default tag: latest
+#latest: Pulling from library/hello-world
+#Digest: sha256:03b30c6a3c320ff172b52bd68eddffde6ded08ce47e650fe52de861c5e9df46d
+#Status: Image is up to date for hello-world:latest
+#docker.io/library/hello-world:latest
+
+docker save -o hello-world.tar hello-world	# docker save -o image_name.tar image_name:tag
+mv hello-world.tar /var/www/html/download/
+chown -R www-data /var/www/html/download/
+# fetch the saved image
+
+# on the original machine:
+# upload the image and load it
+docker load -i image_name.tar
+
+## install sql server image on docker engine
+#requirements:
+#Docker Engine 1.8+
+#Docker overlay2 storage driver. This driver is the default for most users.
+#Install the latest sqlcmd on your Docker host.
+#At least 2 GB of disk space.
+#At least 2 GB of RAM.
+#System requirements for SQL Server on Linux.
+
+# on the not sanctioned machine
+sudo docker pull mcr.microsoft.com/mssql/server:2022-latest
+
+
+sudo docker pull mcr.microsoft.com/mssql/server:2022-latest
+#2022-latest: Pulling from mssql/server
+#724300a57fcd: Pull complete
+#bfc146e87977: Pull complete
+#0ba177b5638c: Pull complete
+#Digest: sha256:7f33bc7998644f7b106221ced5e75451830cd5d9c669e5888470ad72f8f8559b
+#Status: Downloaded newer image for mcr.microsoft.com/mssql/server:2022-latest
+#mcr.microsoft.com/mssql/server:2022-latest
+docker images
+#REPOSITORY                       TAG           IMAGE ID       CREATED         SIZE
+#mcr.microsoft.com/mssql/server   2022-latest   a702c27e4969   3 weeks ago     1.58GB
+#hello-world                      latest        d2c94e258dcb   11 months ago   13.3kB
+
+docker save -o mcr.microsoft.com-mssql-server.tar mcr.microsoft.com/mssql/server:2022-latest	# docker save -o image_name.tar image_name:tag
+
+root@ubu2204:~# docker load -i mcr.microsoft.com-mssql-server.tar
+#5498e8c22f69: Loading layer [==================================================>]  80.41MB/80.41MB
+#413dd0d8f981: Loading layer [==================================================>]   1.34GB/1.34GB
+#e59ffa482bc5: Loading layer [==================================================>]  170.8MB/170.8MB
+#Loaded image: mcr.microsoft.com/mssql/server:2022-latest
+
+# you have to accept EULA the first time you want to launch SQL Server on docker this way:
+# docker run [OPTIONS](flags) IMAGE[:TAG|@DIGEST] [COMMAND] [ARG...]
+# imporant note!!! running the following command with a weak SA Password results in the container not being able to start
+# the corresponding error that you get in the sql server error log is the following:
+ERROR: Unable to set system administrator password: Password validation failed. The password does not meet SQL Server password policy requirements because it is too short. The password must be at least 8 characters..
+# docker run -d -p <host ip>:<host port>:<container port> --name=<container name> --restart=unless-stopped -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
+# docker run -e "ACCEPT_EULA=Y" -e 'MSSQL_SA_PASSWORD=Str0ngPaSsw0Rd' -e "MSSQL_PID=YourProductKeyOrEdition" -p 1433:1433 --name sql_container -d mcr.microsoft.com/mssql/server:2022-latest
+
+# create another sql container
+docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=#Gg-tp3fmg3D" -p 14330:1433 --name sql_container_2 -d mcr.microsoft.com/mssql/server:2022-latest
+docker exec -it sql_container /opt/mssql/bin/mssql-conf set sqlagent.enabled true
+
+install SQLCMD
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
+curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+
+sudo apt-get update -y
+sudo apt-get install -y mssql-tools18 unixodbc-dev
+
+# to update tools you shall run the following:
+# sudo apt-get update -y 
+# sudo apt-get install -y mssql-tools18
+
+# Optional: Add /opt/mssql-tools18/bin/ to your PATH
+echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> /etc/environment
+source /etc/environment
+
+## some more points:
+if you want to check for some info about the mssql created container for example the used license,
+either run the command for image, or the container-specific command:
+docker image history --no-trunc mcr.microsoft.com/mssql/server:2022-latest
+docker logs --details -t -f sql_container --since 60m --until 10m			# this also includes sql server's error log
+docker events --filter 'type=container' --since 60m	--until	20m	# get container history without filtering container name
+
+``` Install Docker engine without Docker Desktop (default context)
+
+
+
+### Install Docker Desktop alongside Docker Engine
+```
+1. Uninstall any conflicting packages in advance
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove $pkg; done
+2. (Optional) How to cleanup previous installations of docker completely
+https://docs.docker.com/engine/install/ubuntu/#uninstall-docker-engine
+3. Docker Engine comes bundled with Docker Desktop for Linux. Install Docker Desktop on Linux:
+``` Install Docker Desktop alongside Docker Engine
+
+
+#list images/containers
+docker images 	# all top-level
+docker images -a	# all including intermediate
+docker images nginx	# view images from a specific repository
+docker images nginx:tagname	# list tag-specific images
+docker images --digests [REPOSITORY][:TAG]
+
+
+# remove docker image:
+docker images
+docker rmi [IMAGE_ID_OR_NAME]
+
+## list containers
+# List Running Containers:
+docker ps
+# List All Containers (Running and Stopped):
+docker ps -a		# = docker container ls -a
+# List Containers by ID (Quiet Mode):
+docker ps -aq
+# List the Latest Created Container:
+docker ps -l
+# List n Last Created Containers:
+# Replace [NUMBER] with the number of containers you wish to list.
+docker ps -n [NUMBER]
+# List Containers with Size Information:
+docker ps -s
+
+
+# remove container
+# stop it if running or force removal with -f flag
+docker stop sql_container
+docker rm sql_container
+
+
+# stop/start containers
+docker start/stop container_name
+
+
+# list layers
+docker history [IMAGE_NAME]
+# remove layers: i found nothing
+
+
+# docker run <image name> always downloads the image if not exists, creates the first container, and runs it.
+# but if the image exists, it creates another additional container which might
+# not be desirable and thus we should bear that in mind.
+# create new container and exit and run no command
+docker run <image name>
+# create new container and run it interactively (remain in container) because of specifying bash command
+docker run -it <image name> bash	# or /bin/bash
+# create container with a command and exit
+docker run -it  ubuntu bash -c lslogins
+docker run -it  ubuntu lslogins
+# create container with arbitrary name:
+docker run -it --name my_container_name my_image /bin/bash
+
+
+# docker exec
+# The docker exec command is used to run a specific command in an already running container.
+# It's a powerful feature that allows you to interact with or modify the container's environment in real-time.
+docker exec [OPTIONS] CONTAINER COMMAND [ARG...]
+docker exec -u root -it  sql_container_2
+# options
+{
+• -d, --detach: Run the command in the background.
+• -i, --interactive: Keep STDIN open even if not attached.
+• -t, --tty: Allocate a pseudo-TTY, which simulates a terminal, like ssh or shell.
+• --user: Username or UID to use when running the command.
+• --env: Set environment variables.
+• --workdir: Working directory inside the container.
+}
+
+
+
+### Portainer, portainer agent
+```
+1. run one of the following
+- sanctioned
+	# unsanctioned machine:
+	one of the following 
+		- docker pull portainer/portainer-ce:latest	# Community Edition
+		- docker pull portainer/portainer-ee:latest	# Business Edition
+	docker save -o portainer-portainer-ce:latest.tar portainer/portainer-ce:latest
+	mv portainer-portainer-ce:latest.tar /var/www/html/download/
+	chown -R www-data /var/www/html/download/
+ 
+	# sanctioned machine
+	docker load -i portainer-portainer-ce-latest.tar
+	
+- not sanctioned
+	docker pull portainer/portainer-ce:latest
+
+2. 
+docker volume create portainer_data
+# this will create a docker volume in /var/lib/docker/volumes/
+
+3. create portainer container instance
+docker run -d -p 9000:9000 --name=portainer --restart=unless-stopped -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
+docker run -d -p 8000:8000 -p 9443:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ee:latest
+docker run -d -p 8000:8000 -p 9443:9443 --name portainer-ee --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_be_data:/data portainer/portainer-ee:2.26.0
+
+# install on port 80 and another volume
+docker run -d -p 80:9000 --name=portainer --restart=unless-stopped -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
+
+
+
+4. check if container is created and running
+docker ps
+5. finally, connect to your portainer web service using a web browser
+http://192.168.171.81:9000/
+6. create admin pass
+
+# Install portainer agent
+7. 
+docker run -d \
+  -p 9001:9001 \
+  --name portainer_agent \
+  --restart=always \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /var/lib/docker/volumes:/var/lib/docker/volumes \
+  portainer/agent:2.19.4
+
+docker pull portainer/agent:latest
+docker save -o portainer-agent-latest.tar portainer/agent:latest
+mv portainer-agent-latest.tar /var/www/html/download/
+chown -R www-data /var/www/html/download/
+# download http://49.13.52.62/download/portainer-agent-latest.tar
+docker load -i portainer-agent-latest.tar
+docker run -d  -p 9001:9001  --name portainer_agent  --restart=always  -v /var/run/docker.sock:/var/run/docker.sock  -v /var/lib/docker/volumes:/var/lib/docker/volumes  portainer/agent:latest
+
+## install portainer on WSL windows
+1. do the ordinary steps like afore in a linux environment 
+2. run the following command inside PowerShell ISE to bind incommig requests from the remote machines
+	to the local machine's WSL:
+netsh interface portproxy add v4tov4 listenport=9000 listenaddress=0.0.0.0 connectport=9000 connectaddress=<WSL distro internal IP address>
+
+
+``` Portainer
+
+
+
+
+### PostgreSQL
+```
+1. run one of the following
+docker load -i postgres-latest.tar
+docker pull postgres:latest		# or docker pull postgres:14.2
+
+2. create postgres container instance
+docker run -d --name postgresql-container -e POSTGRES_PASSWORD=#Gg-tp3fmg3D -p 5432:5432 -v postgresql-data:/var/lib/postgresql/data postgres
+
+4. check if container is created and running
+docker ps
+5. finally, connect to your containered postgres database cluster
+
+``` PostgreSQL
+
+
+
+
+
+### Docker volumes volume
+```
+docker volume create portainer_data
+
+docker volumes default location
+/var/lib/docker/volumes/
+
+docker volume create --name my_custom_volume --opt type=none --opt device=/path/to/custom/location --opt o=bind
+
+## view and query container json
+docker inspect portainer_be
+
+## view volume attached to a container
+docker inspect -f '{{ json .Mounts }}' portainer_be
+
+remove all unused volumes
+docker volume prune		# -f for force
+
+find which container(s) a volume is attached to
+docker ps -a --filter volume=VOLUME_NAME_OR_MOUNT_POINT
+``` Docker volumes volume
+
+
+
+### docker inspect container json file
+```
+docker inspect portainer
+# view environment variables 
+docker inspect sql_container  | grep MSSQL_SA_PASSWORD | cut -d '=' -f2 | sed 's/..$//'
+
+# view sa password:
+docker inspect sql_container_2  | grep MSSQL_SA_PASSWORD | tr -d '"MSSQL_SA_PASSWORD=' | sed 's/.$//'
+
+#Gg-tp3fmg3D"
+``` docker inspect container json file
+
+
+
+### manipulate docker startup type behavior
+```
+Startup types:
+{
+no: The container will not automatically restart.
+•  on-failure[:max-retries]: The container will restart if it exits due to an error, which manifests as a non-zero exit code. Optionally, you can limit the number of restart attempts with max-retries.
+
+•  always: The container will always restart unless it is manually stopped.
+
+•  unless-stopped: The container will always restart unless it has been manually stopped.
+
+}
+```
+
+
+
+### install docker image offline sanction sanctions sanctioned
+```
+1. run one of the following
+
+# unsanctioned machine:
+	docker pull portainer/portainer-ce:latest
+	docker save -o portainer-portainer-ce:latest.tar portainer/portainer-ce:latest
+	mv portainer-portainer-ce:latest.tar /var/www/html/download/
+	mv *.tar /var/www/html/download/
+	chown -R www-data /var/www/html/download/
+
+# Download using the following url:
+http://49.13.52.62/download/portainer-portainer-ce:latest.tar
+ 
+# sanctioned machine
+	docker load -i portainer-portainer-ce-latest.tar
+	
+docker run -d -p 9000:9000 --name=portainer --restart=unless-stopped -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce	
+docker run -d  -p 9001:9001  --name portainer_agent  --restart=always  -v /var/run/docker.sock:/var/run/docker.sock  -v /var/lib/docker/volumes:/var/lib/docker/volumes  portainer/agent:latest
+
+``` install docker image offline sanction sanctions sanctioned
+
+
+##some repo commands:
+# search for package
+docker search --filter is-official=true --filter stars=3 nginx
+# list available tags for a package
+snap install jq			# command-line json processor
+package=mcr.microsoft.com/mssql/server
+TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$package:pull" | jq -r '.token')
+curl -s -H "Authorization: Bearer $TOKEN" https://index.docker.io/v2/$package/tags/list | jq '.tags'
+
+TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/nginx:pull" | jq -r '.token')
+curl -s -H "Authorization: Bearer $TOKEN" https://index.docker.io/v2/library/nginx/tags/list | jq '.tags'
+
+
+
+### Setup docker registry
+```
+# Run the Registry as a Docker Container:
+docker run -d -p 5000:5000 --restart always --name registry registry:latest
+# tag your image with the registry's address:
+docker tag my-image localhost:5000/my-image
+# push the image to registry
+docker push localhost:5000/my-image
+# Persisting Data:
+docker run -d -p 5000:5000 --restart always --name registry -v /path/on/host:/var/lib/registry registry:2
+
+``` Setup docker registry
+
+
+# search docker hub:
+docker search --filter is-official=true --filter stars=3 nginx
+
+
+
+root@amomen:~# docker run -d -p 8000:8000 -p 9443:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ee:latest
+Unable to find image 'portainer/portainer-ee:latest' locally
+latest: Pulling from portainer/portainer-ee
+57654d40e0a5: Already exists
+1f476acfabd6: Already exists
+5171176db7f2: Pull complete
+52e9438966a5: Pull complete
+43d4775415ac: Pull complete
+6041398a62fa: Pull complete
+cdd64a36267b: Pull complete
+c54ba916b7c2: Pull complete
+3a1947d87b20: Pull complete
+d6c53df12334: Pull complete
+4f4fb700ef54: Pull complete
+Digest: sha256:0aa305da72738d9f90a209bf74bdc74172004690fa298f52d5f92dd065f26aea
+Status: Downloaded newer image for portainer/portainer-ee:latest
+
+
+
+
+### portainer admin password recovery
+```
+docker stop <id-portainer-container>
+docker pull portainer/helper-reset-password
+docker run --rm -v portainer_data:/data portainer/helper-reset-password
+docker start <id-portainer-container>
+```
+
+
+
+
+## SQLServer 2022 Container Database Files:
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/msdblog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/tempdb2.ndf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/modellog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/model_replicatedmaster.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/templog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/tempdb4.ndf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/master.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/model_replicatedmaster.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/model_msdbdata.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/tempdb.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/model_msdblog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/msdbdata.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/mastlog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/tempdb3.ndf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/merged/var/opt/mssql/data/model.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/msdblog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/tempdb2.ndf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/modellog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/model_replicatedmaster.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/templog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/tempdb4.ndf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/master.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/model_replicatedmaster.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/model_msdbdata.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/tempdb.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/model_msdblog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/msdbdata.mdf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/mastlog.ldf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/tempdb3.ndf
+/var/lib/docker/overlay2/6dbeb693c1c4dc0ee2aec1aeb17372f2c68a44b1ff85619ea9b0dfa0960d88bd/diff/var/opt/mssql/data/model.mdf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/msdblog.ldf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/tempdb2.ndf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/modellog.ldf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/model_replicatedmaster.ldf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/templog.ldf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/tempdb4.ndf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/master.mdf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/model_replicatedmaster.mdf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/model_msdbdata.mdf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/tempdb.mdf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/model_msdblog.ldf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/msdbdata.mdf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/mastlog.ldf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/tempdb3.ndf
+/var/lib/docker/overlay2/99ddaa2385a5e53c47ef36ae9dc3d1a3bf9935f9de6d33225b655f79862bc0ed/diff/var/opt/mssql/data/model.mdf
+
+
+json files location for some installed containers:
+typical location:
+/var/lib/docker/containers/<container-id>/config.v2.json
+root@ubu2204:~# find /var/lib/docker/ -type f  \( -name "*.json"  \)
+/var/lib/docker/containers/80b727525d603fb42ccfa80ea14e1ccd5f452ea6569b46ce825fc96054212d07/config.v2.json
+/var/lib/docker/containers/80b727525d603fb42ccfa80ea14e1ccd5f452ea6569b46ce825fc96054212d07/hostconfig.json
+/var/lib/docker/containers/65dfd4efdfa4ac0b476041c876a51572e59e5fa43b6c6dbaac7c68fcc14e1649/config.v2.json
+/var/lib/docker/containers/65dfd4efdfa4ac0b476041c876a51572e59e5fa43b6c6dbaac7c68fcc14e1649/hostconfig.json
+/var/lib/docker/containers/372944b4dda950292eb076b43273c8b12e13624c518c886b32be395f3193f293/config.v2.json
+/var/lib/docker/containers/372944b4dda950292eb076b43273c8b12e13624c518c886b32be395f3193f293/hostconfig.json
+/var/lib/docker/containers/5abc5661257557d6091e15bb205ae0c1d6b4b7355f33c3d93a4527616bd7de7a/config.v2.json
+/var/lib/docker/containers/5abc5661257557d6091e15bb205ae0c1d6b4b7355f33c3d93a4527616bd7de7a/hostconfig.json
+/var/lib/docker/containers/df16e9bd46b6c4e90d71dcfe1f58760f179d1ff6105ae08ca463be8cf0c396d8/config.v2.json
+/var/lib/docker/containers/df16e9bd46b6c4e90d71dcfe1f58760f179d1ff6105ae08ca463be8cf0c396d8/hostconfig.json
+/var/lib/docker/containers/d4f92288c65172bbf7fe85ab52ca0a7bb2aecfd4a77ab577ac57f32dadba34da/config.v2.json
+/var/lib/docker/containers/d4f92288c65172bbf7fe85ab52ca0a7bb2aecfd4a77ab577ac57f32dadba34da/hostconfig.json
+/var/lib/docker/containers/bd038cde08b01b99d1e13409fdccca10e9f26cf87b316f2454043b3606be1a30/config.v2.json
+/var/lib/docker/containers/bd038cde08b01b99d1e13409fdccca10e9f26cf87b316f2454043b3606be1a30/hostconfig.json
+/var/lib/docker/overlay2/3744aa73c2cabb048f705a3400ca5f30e0e8562ceda2efbda3c3972d8cad905a/diff/public/locales/en/translation.json
+/var/lib/docker/overlay2/92f07277f9b95ebd4974518858914266e88a553668b23c4535a33433b93dc3c6/diff/metadata.json
+/var/lib/docker/overlay2/a26988935e0319d75344cb5870869f14deca2205aa4177784f27e940aa53aa47/diff/.docker/config.json
+/var/lib/docker/overlay2/41af6d298888adf3c7cac09e72b50e3184519250976e32f6e186c266ef57130a/merged/.docker/config.json
+/var/lib/docker/overlay2/b2835d922ea532e5a9399285cb412c125b4410f566e05f07f86100b5b9159fdf/merged/metadata.json
+/var/lib/docker/overlay2/b2835d922ea532e5a9399285cb412c125b4410f566e05f07f86100b5b9159fdf/merged/public/locales/en/translation.json
+/var/lib/docker/image/overlay2/repositories.json
+/var/lib/docker/volumes/portainer_data/_data/docker_config/config.json
+
+
+
+### modify containers variables
+```
+#while creating the container for the first time:
+docker run --hostname=your_new_hostname your_image
+docker run -e "VAR_NAME=value" your_image
+docker run -p host_port:container_port your_image
+
+# when container already exists:
+1. Use docker commit to create an image from the current state of the container
+docker commit -m "Your commit message" -a "Author Name" container_id_or_name repository/new_image_name:tag
+-m is used to specify a commit message.
+-a is used to record the author of the commit
+container_id_or_name is the ID or name of your container
+repository/new_image_name is the name for the new image you're creating
+
+2. Stop and remove the existing container
+3. Run a new container with the desired settings using the image created from the commit.
+
+``` modify containers variables
+
+
+
+@echo off
+for /f "tokens=1,2" %%a in ('wmic logicaldisk get DeviceID^, Size') do ( if %%a NEQ DeviceID ( set /a size_gb=%%b/1024/1024/1024 echo %%a: %size_gb% GB ) )
+
+
+
+# create docker registry:
+docker run -d -p 5000:5000 --restart always --name registry registry:2
+docker tag my-image localhost:5000/my-image
+docker push localhost:5000/my-image
+docker run -d -p 5000:5000 --restart always --name registry -v /path/on/host:/var/lib/registry registry:2
+
+
+
+
+### docker run samples
+```
+
+# postgres
+docker run --name your-postgres-container -e POSTGRES_PASSWORD=your_password -d postgres
+```
+
+docker run --privileged -d your_image #allow a docker container to access entire host system
+
+docker run -v /path/to/host/directory:/path/in/container -d your_image #
+
+
+
+### linuxserver webtop
+docker run -d --name=webtop -e PUID=1000 -e PGID=1000 -e TZ=Europe/London -p 3000:3000 -v /path/to/data:/config --shm-size="1gb" --restart unless-stopped ghcr.io/linuxserver/webtop
+docker run -d \
+  --name=webtop \
+  --security-opt seccomp=unconfined `#optional` \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Etc/UTC \
+  -e SUBFOLDER=/ `#optional` \
+  -e TITLE=Webtop `#optional` \
+  -p 3000:3000 \
+  -p 3001:3001 \
+  -v /path/to/data:/config \
+  -v /var/run/docker.sock:/var/run/docker.sock `#optional` \
+  --device /dev/dri:/dev/dri `#optional` \
+  --shm-size="1gb" `#optional` \
+  --restart unless-stopped \
+  lscr.io/linuxserver/webtop:latest
+  
+  
+  
+  
+# find ancestor image ids of docker containers that their image name is exactly 'pattern'
+docker ps -a --filter "ancestor=pattern" -q
+# find ancestor image ids of docker containers that their image name has 'pattern' in their name
+docker ps -a --format '{{.ID}} {{.Image}}' | grep 'pattern' | awk '{print $1}'
+
+# Remove images and child containers that have a specific pattern in the image name:
+docker ps -a --format '{{.ID}} {{.Image}}' | grep 'pattern' | awk '{print $1}' | xargs -r docker stop
+docker ps -a --format '{{.ID}} {{.Image}}' | grep 'pattern' | awk '{print $1}' | xargs -r docker rm
+# or to combine these 2 lines:
+docker ps -a --format '{{.ID}} {{.Image}}' | grep 'pattern' | awk '{print $1}' | xargs -I{} bash -c 'docker stop {} && docker rm {}'
+docker images --filter=reference='*pattern*' -q | xargs -r docker rmi -f
+
+# docker image downloader command:
+echo && docker ps -a --format '{{.ID}} {{.Image}}' | grep $imn | awk '{print $1}' | xargs -I{} bash -c 'docker stop {} && docker rm {}' && docker images --filter=reference=`echo '*'$imn'*'` -q | xargs -r docker rmi -f && rm -f /var/www/html/download/* && docker save -o /var/www/html/download/`echo $imn | tr '/' '_'`.tar $imn && chown -R www-data:www-data /var/www && echo http://`ip -4 addr show $(ip -br link | awk '$1 != "lo" {print $1}' | grep ^e) | grep -oP '(?<=inet\s)\d+(\.\d+){3}'`/download/`echo $imn | tr '/' '_'`.tar && echo
+
+
+When you forcibly remove a Docker image using the docker rmi -f command, 
+Docker does not automatically stop and remove the running containers associated 
+with that image. Instead, it un-tags the image, and the containers continue to run 
+but are now associated with the image ID rather than the image name
+Here's what happens in detail:
+1. Image Un-tagging: The image is un-tagged, meaning its name and 
+ tag are removed, but the image data remains on the system
+
+
+2. Containers Continue Running: Any running containers that
+ were using the image will continue to run, but their IMAGE
+ field will now show the image ID instead of the name.
+ 
+  
+3. Image Removal: The actual image data is not removed
+ until all containers using that image are stopped and removed.
+ 
+ 
+ 
+ 
+### docker image tags
+# postgres just tags:
+curl -s "https://registry.hub.docker.com/v2/repositories/library/postgres/tags?page_size=100" | jq -r '.results[].name' | sort -u
+# linuxserver/webtop tags:
+curl -s "https://registry.hub.docker.com/v2/repositories/linuxserver/webtop/tags?page_size=100" | jq -r '.results[].name' | sort -u
+cnt=1; page_size=10; url="https://registry.hub.docker.com/v2/repositories/linuxserver/webtop/tags?page_size=$page_size"; while [ -n "$url" ]; do resp=$(curl -s "$url"); echo "— page #$((cnt++)) fetched —"; echo "$resp" | jq -r '.results[].name' | awk '!seen[$0]++'; url=$(echo "$resp" | jq -r '.next // empty'); echo $url; done
+#jq -r '.results[] | "\(.name)", "\(.digest)"' input.json
+
+# Unique digests
+curl -s "https://registry.hub.docker.com/v2/repositories/linuxserver/webtop/tags?page_size=100" | jq -r '.results[] | [.name, .digest] | @tsv' | awk -F'\t' '!digests[$2] || length($1) < length(shortest[$2]) { shortest[$2]=$1 } { digests[$2]++ } END { for (d in digests) if (d != "null") print d "\t" shortest[d] }'
+cnt=1; page_size=10; url="https://registry.hub.docker.com/v2/repositories/linuxserver/webtop/tags?page_size=100" curl -s "" | jq -r '.results[] | [.name, .digest] | @tsv' | awk -F'\t' '!digests[$2] || length($1) < length(shortest[$2]) { shortest[$2]=$1 } { digests[$2]++ } END { for (d in digests) if (d != "null") print d "\t" shortest[d] }'
+cnt=1; page_size=10; url="https://registry.hub.docker.com/v2/repositories/linuxserver/webtop/tags?page_size=100" curl -s "" | jq -r '.results[] | [.name, .digest] | @tsv' | awk -F'\t' '!digests[$2] || length($1) < length(shortest[$2]) { shortest[$2]=$1 } { digests[$2]++ } END { for (d in digests) if (d != "null") print d "\t" shortest[d] }'
+
+# full remote json manifest
+curl -s "https://registry.hub.docker.com/v2/repositories/library/postgres/tags?page_size=100" | jq
+## Ubuntu
+curl -s "https://registry.hub.docker.com/v2/repositories/library/ubuntu/tags?page_size=100" | jq -r '.results[].name' | sort -u
+
+
+#postgres only available major versions:
+curl -s "https://registry.hub.docker.com/v2/repositories/library/postgres/tags?page_size=100" | \
+jq -r '.results[] | select(.name | test("^[0-9]+([.][0-9]+)?$")) | .name' | \
+cut -d '.' -f 1 | \
+sort -u
+
+#postgres only available major&minor versions:
+curl -s "https://registry.hub.docker.com/v2/repositories/library/postgres/tags?page_size=100" | \
+jq -r '.results[] | select(.name | test("^[0-9]+([.][0-9]+)?$")) | .name' | \
+cut -d '.' -f 1 | \
+sort -u
+
+ 
+
+
+#postgres tags filter out tags that do not include number:
+curl -s "https://registry.hub.docker.com/v2/repositories/library/postgres/tags?page_size=100" | jq -r '.results[] | select(.name | test("^[0-9]+")) | .name' | sort -u
+
+
+
+### setup docker registry
+```
+*.
+docker pull registry:2.8.3
+
+*.
+docker run -d -p 10000:5000 --name docker-registry-2.8.3 registry:2.8.3
+
+*. Edit the Docker daemon configuration to allow insecure connections to your local registry. Open the /etc/docker/daemon.json
+ file (create it if it doesn't exist) and add the following configuration:
+vi /etc/docker/daemon.json
+{
+  "insecure-registries": ["localhost:10000"]
+}
+
+*.
+sudo systemctl restart docker
+
+*. 
+mkdir -p /opt/registry/config
+
+*. 
+nano /opt/registry/config/config.yml
+
+version: 0.1
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: ":10000"
+  headers:
+    X-Content-Type-Options: "nosniff"
+health:
+  storages:
+    - filesystem
+notifications:
+  events:
+    push:
+      enabled: true
+auth:
+  service: registry
+  realm: http://localhost:10000/v2/
+  htpasswd:
+    file: /opt/registry/auth/passwd
+
+*. do the next steps for registry authentication password file in the '/opt/registry/auth' directory or '/etc/docker/registry'
+ directory. The registry config.yml file must be set accordingly. 
+mkdir -p /opt/registry/auth
+
+*.
+htpasswd -c /opt/registry/auth/passwd admin
+htpasswd -c <password file path> <user>
+
+```
+
+
+
+docker build -t pg_fad_advworks .
+docker-compose -f /path/to/your-compose-file.yml up -d	# Default would be the current directory with no -f flag needed
