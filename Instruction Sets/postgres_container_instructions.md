@@ -26,12 +26,25 @@ docker load -i postgres-latest.tar
 
 ## 2) Create a container
 
+shell:
+
 ```shell
 docker run -d \
   --name postgresql-container \
   -e POSTGRES_PASSWORD=<strong-password> \
   -p 5432:5432 \
   -v postgresql-data:/var/lib/postgresql/data \
+  postgres:latest
+```
+
+powershell:
+
+```powershell
+docker run -d `
+  --name postgresql-container `
+  -e POSTGRES_PASSWORD=<strong-password> `
+  -p 5432:5432 `
+  -v postgresql-data:/var/lib/postgresql/data `
   postgres:latest
 ```
 
